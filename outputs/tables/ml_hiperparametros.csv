@@ -1,0 +1,4 @@
+modelo,roc_auc_cv_ajuste,parametros,n_busqueda
+Regresion logistica,0.9944773093899699,{'model__C': 10.0},50000
+Random Forest,0.998312110294954,"{'model__max_depth': None, 'model__min_samples_leaf': 2}",50000
+Gradient Boosting,0.9983017628617453,"{'model__learning_rate': 0.1, 'model__max_leaf_nodes': 31}",50000

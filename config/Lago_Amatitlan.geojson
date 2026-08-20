@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "name": "Lago_Amatitlan",
+  "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}},
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "amatitlan",
+        "name": "Lago Amatitlán",
+        "fuente": "GeoJSON proporcionado por el curso"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-90.512924, 14.412347],
+          [-90.512924, 14.493799],
+          [-90.638065, 14.493799],
+          [-90.638065, 14.412347],
+          [-90.512924, 14.412347]
+        ]]
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lab4-ml-gis"
+version = "0.2.0"
+description = "Clasificación de cianobacterias con ML y validación geoespacial en Atitlán y Amatitlán."
+requires-python = ">=3.10"
+dependencies = [
+  "jupyterlab>=4.2",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "openeo>=0.51",
+  "pandas>=2.2",
+  "rasterio>=1.3",
+  "requests>=2.32",
+  "scikit-learn>=1.5",
+  "seaborn>=0.13",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,3 @@
+# Compatibilidad con flujos tradicionales de pip.
+# La definición canónica y versionada de dependencias está en pyproject.toml y uv.lock.
+-e .[test]
