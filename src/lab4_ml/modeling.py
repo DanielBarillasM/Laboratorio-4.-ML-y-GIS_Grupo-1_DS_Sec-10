@@ -33,6 +33,8 @@ class ExperimentResult:
     random_predictions: pd.DataFrame
     spatial_predictions: pd.DataFrame
     best_model: str
+    fitted_models: dict[str, Pipeline]
+    random_test: pd.DataFrame
 
 
 def model_spaces(random_state: int = 2026) -> dict[str, tuple[Pipeline, dict]]:
@@ -192,6 +194,7 @@ def run_experiments(
         pred = random_test[
             ["lago", "fecha", "x_utm", "y_utm", "longitud", "latitud", "bloque_1km", "CYA", "cya_alta"]
         ].copy()
+        pred["source_index"] = random_test.index.to_numpy()
         pred["modelo"] = name
         pred["probabilidad_alta"] = probability
         pred["prediccion"] = (probability >= 0.5).astype("int8")
@@ -217,6 +220,7 @@ def run_experiments(
             )
             metrics.append(row)
             pred = sp_test[["lago", "fecha", "x_utm", "y_utm", "bloque_1km", "cya_alta"]].copy()
+            pred["source_index"] = sp_test.index.to_numpy()
             pred["modelo"] = name
             pred["fold_espacial"] = fold_number
             pred["probabilidad_alta"] = probability
@@ -281,4 +285,6 @@ def run_experiments(
         random_predictions=pd.concat(random_prediction_frames, ignore_index=True),
         spatial_predictions=pd.concat(spatial_prediction_frames, ignore_index=True),
         best_model=best_name,
+        fitted_models=tuned,
+        random_test=random_test,
     )

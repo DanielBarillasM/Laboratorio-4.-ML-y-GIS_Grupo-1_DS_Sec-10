@@ -43,6 +43,17 @@ class DatasetBuildResult:
     class_by_date: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class RasterObservation:
+    """Variables completas y metadatos para predecir un GeoTIFF."""
+
+    data: pd.DataFrame
+    valid_mask: np.ndarray
+    profile: dict
+    date: pd.Timestamp
+    lake: str
+
+
 def _date_from_path(path: Path) -> pd.Timestamp:
     match = re.search(r"(20\d{2}-\d{2}-\d{2})", path.name)
     if not match:
@@ -75,6 +86,101 @@ def _band_names(src: rasterio.io.DatasetReader) -> list[str]:
     raise ValueError(
         f"{src.name}: se esperaban {len(ALL_BANDS)} bandas con nombre y hay {src.count}"
     )
+
+
+def load_raster_observation(
+    path: Path,
+    lake: str,
+    *,
+    threshold: float = CYA_THRESHOLD,
+) -> RasterObservation:
+    """Convierte todos los pixeles validos de un stack en variables de ML.
+
+    La funcion reproduce exactamente las variables usadas por
+    :func:`build_pixel_dataset` y conserva fila/columna para reconstruir una
+    superficie raster sin inventar valores fuera del agua o sobre NoData.
+    """
+
+    if lake not in {"atitlan", "amatitlan"}:
+        raise ValueError(f"Lago desconocido: {lake}")
+    path = Path(path)
+    date = _date_from_path(path)
+    with rasterio.open(path) as src:
+        names = _band_names(src)
+        missing = sorted(set(ALL_BANDS).difference(names))
+        if missing:
+            raise ValueError(f"{path.name}: faltan bandas {missing}")
+        order = [names.index(name) + 1 for name in ALL_BANDS]
+        cube = src.read(order, masked=True).filled(np.nan).astype("float32")
+        valid = np.isfinite(cube).all(axis=0)
+        rows, cols = np.where(valid)
+        if len(rows) == 0:
+            raise ValueError(f"{path}: no tiene pixeles validos")
+        values = cube[:, rows, cols].T
+        xs, ys = xy(src.transform, rows, cols, offset="center")
+        xs = np.asarray(xs, dtype="float64")
+        ys = np.asarray(ys, dtype="float64")
+        bounds = src.bounds
+        profile = src.profile.copy()
+
+    frame = pd.DataFrame(values, columns=ALL_BANDS)
+    frame.insert(0, "lago", lake)
+    frame.insert(1, "fecha", date)
+    frame["fila"] = rows.astype("int32")
+    frame["columna"] = cols.astype("int32")
+    frame["x_utm"] = xs
+    frame["y_utm"] = ys
+    frame["x_normalizada"] = (xs - bounds.left) / (bounds.right - bounds.left)
+    frame["y_normalizada"] = (ys - bounds.bottom) / (bounds.top - bounds.bottom)
+    day = date.dayofyear
+    frame["dia_anio_sin"] = np.sin(2 * np.pi * day / 365.25)
+    frame["dia_anio_cos"] = np.cos(2 * np.pi * day / 365.25)
+    frame["cya_alta"] = (frame["CYA"] >= threshold).astype("int8")
+    frame["bloque_x"] = np.floor(frame["x_utm"] / 1000).astype("int32")
+    frame["bloque_y"] = np.floor(frame["y_utm"] / 1000).astype("int32")
+    frame["bloque_1km"] = (
+        frame["lago"]
+        + "_"
+        + frame["bloque_x"].astype(str)
+        + "_"
+        + frame["bloque_y"].astype(str)
+    )
+    return RasterObservation(
+        data=frame,
+        valid_mask=valid,
+        profile=profile,
+        date=date,
+        lake=lake,
+    )
+
+
+def values_to_surface(observation: RasterObservation, values) -> np.ndarray:
+    """Reconstruye una matriz 2-D y deja NaN en cada pixel invalido."""
+
+    values = np.asarray(values, dtype="float32")
+    if len(values) != len(observation.data):
+        raise ValueError("La cantidad de valores no coincide con los pixeles validos")
+    surface = np.full(observation.valid_mask.shape, np.nan, dtype="float32")
+    surface[
+        observation.data["fila"].to_numpy(), observation.data["columna"].to_numpy()
+    ] = values
+    return surface
+
+
+def classify_errors(y_true, y_pred) -> np.ndarray:
+    """Etiqueta TN, FP, FN y TP de forma vectorizada."""
+
+    y_true = np.asarray(y_true, dtype=int)
+    y_pred = np.asarray(y_pred, dtype=int)
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true y y_pred deben tener la misma forma")
+    if not set(np.unique(y_true)).issubset({0, 1}) or not set(np.unique(y_pred)).issubset({0, 1}):
+        raise ValueError("Las etiquetas deben ser binarias")
+    result = np.full(y_true.shape, "TN", dtype="<U2")
+    result[(y_true == 0) & (y_pred == 1)] = "FP"
+    result[(y_true == 1) & (y_pred == 0)] = "FN"
+    result[(y_true == 1) & (y_pred == 1)] = "TP"
+    return result
 
 
 def build_pixel_dataset(

@@ -1,0 +1,3 @@
+lago,fecha,pixeles_validos,probabilidad_media,probabilidad_mediana,categoria_baja_pct,categoria_media_pct,categoria_alta_pct,archivo_raster_local
+atitlan,2026-07-22,301570,0.00255702156573534,8.693724339536857e-06,99.77152899824253,0.06930397585966773,0.15916702589780152,data\processed\prediction_maps\atitlan_2026-07-22_probabilidad.tif
+amatitlan,2026-06-19,34483,0.6234503984451294,0.8530062437057495,31.725777919554567,8.697039120726155,59.57718295971928,data\processed\prediction_maps\amatitlan_2026-06-19_probabilidad.tif

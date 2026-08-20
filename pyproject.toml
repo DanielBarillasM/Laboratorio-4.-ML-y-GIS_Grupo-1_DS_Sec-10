@@ -4,12 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lab4-ml-gis"
-version = "0.2.0"
+version = "1.0.0"
 description = "Clasificación de cianobacterias con ML y validación geoespacial en Atitlán y Amatitlán."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "jupyterlab>=4.2",
+  "joblib>=1.4",
   "matplotlib>=3.8",
+  "numba>=0.61",
   "numpy>=1.26",
   "openeo>=0.51",
   "pandas>=2.2",
@@ -17,6 +19,7 @@ dependencies = [
   "requests>=2.32",
   "scikit-learn>=1.5",
   "seaborn>=0.13",
+  "shap>=0.50",
 ]
 
 [project.optional-dependencies]
