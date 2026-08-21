@@ -53,7 +53,7 @@ concentraciones de cianobacterias en los lagos de Atitlán y Amatitlán\par}
 \pagenumbering{roman}
 
 \begin{abstract}
-Se construyó un conjunto supervisado a nivel píxel--fecha con 22 observaciones Sentinel-2 L2A de los lagos de Atitlán y Amatitlán. Después de recortar los GeoJSON oficiales, filtrar calidad, identificar agua y calcular los índices de la Parte 1, quedaron 3,419,056 píxeles válidos; para modelado se tomó una muestra reproducible y balanceada por lago--fecha de 220,000 filas. La respuesta binaria identifica valores del proxy Se2WaQ iguales o superiores a 100,000 células/mL. Para evitar fuga se excluyeron CYA, B02, B03, B04, NDVI y NDWI. Se compararon regresión logística, Random Forest y Gradient Boosting con prueba aleatoria 70/30, GroupKFold espacial, retención temporal y transferencia entre lagos. Gradient Boosting obtuvo ROC-AUC 0.9987 y F1 0.9572 en la prueba aleatoria, pero F1 0.6651 en la fecha futura; la regresión logística conservó el mayor recall temporal (0.9384). SHAP atribuyó el mayor efecto a B05 y B08. Los mapas finales muestran riesgo casi nulo en la última escena de Atitlán y alta probabilidad en gran parte de Amatitlán. Los resultados respaldan el uso del modelo como herramienta de priorización, no como sustituto de mediciones limnológicas o sanitarias in situ.
+Se construyó un conjunto supervisado a nivel píxel--fecha con 22 observaciones Sentinel-2 L2A de los lagos de Atitlán y Amatitlán. Después de recortar los GeoJSON oficiales, filtrar calidad, identificar agua y calcular los índices de la Parte 1, quedaron 3,419,056 píxeles válidos; para modelado se tomó una muestra reproducible y balanceada por lago--fecha de 220,000 filas. La respuesta binaria identifica valores del proxy Se2WaQ iguales o superiores a 100,000 células/mL. Para evitar fuga se excluyeron CYA, B02, B03, B04, NDVI y NDWI. Se compararon regresión logística, Random Forest y Gradient Boosting con prueba aleatoria 70/30, GroupKFold espacial, retención temporal y transferencia entre lagos. Gradient Boosting obtuvo ROC-AUC 0.9987 y F1 0.9572 en la prueba aleatoria, pero F1 0.6651 en la fecha futura; la regresión logística conservó el mayor recall temporal (0.9384). SHAP atribuyó el mayor efecto a B05 y B08. Los mapas estrictamente fuera de muestra muestran riesgo casi nulo en la última escena de Atitlán y focos localizados en Amatitlán, donde el modelo subestima la extensión de un régimen de floración no visto durante el entrenamiento. Los resultados respaldan el uso del modelo como herramienta de priorización, no como sustituto de mediciones limnológicas o sanitarias in situ.
 \end{abstract}
 
 \tableofcontents
@@ -317,16 +317,14 @@ La última escena de cada lago coincide con la fecha retenida en la validación 
 
 \begin{table}[H]
 \centering
-% ATENCION: cifras pendientes de regenerar con scripts/run_ml_final.py tras el
-% cambio a mapas fuera de muestra (antes se usaba el reajuste con las 220,000 filas).
 \caption{Resumen de mapas predictivos de la última fecha, cada una predicha sin su propia fecha en el entrenamiento.}
 \small
 \begin{tabular}{lrrrrr}
 \toprule
 Lago & Píxeles & $\bar p$ & Baja (\%) & Media (\%) & Alta (\%)\\
 \midrule
-Atitlán, 2026-07-22 & 301,570 & 0.003 & 99.77 & 0.07 & 0.16\\
-Amatitlán, 2026-06-19 & 34,483 & 0.623 & 31.73 & 8.70 & 59.58\\
+Atitlán, 2026-07-22 & 301,570 & 0.005 & 99.56 & 0.17 & 0.26\\
+Amatitlán, 2026-06-19 & 34,483 & 0.269 & 70.00 & 11.40 & 18.60\\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -343,7 +341,7 @@ Amatitlán, 2026-06-19 & 34,483 & 0.623 & 31.73 & 8.70 & 59.58\\
 \caption{Amatitlán: CYA observado, probabilidad y categoría predictiva.}
 \end{figure}
 
-Los mapas son coherentes con la Parte 1: la escena final de Atitlán presenta concentración baja casi generalizada, mientras que Amatitlán mantiene un patrón amplio de riesgo alto. La comparación no es una validación independiente, porque la clase observada proviene del mismo proxy remoto y se calcula sobre el mismo píxel que alimenta al modelo; su utilidad es verificar concordancia espacial y priorizar puntos de muestreo. El mapa de Amatitlán debe leerse junto con la fila temporal del cuadro de escenarios: sobre esa misma escena el Gradient Boosting alcanza recall 0.5611 y F1 0.6651, muy por debajo de su desempeño aleatorio, de modo que la concordancia visual global convive con una omisión apreciable de píxeles altos.
+Atitlán presenta concentración baja casi generalizada y el modelo asigna 99.56\% de sus píxeles a riesgo bajo. En Amatitlán, los focos predichos coinciden parcialmente con sectores de CYA elevado, pero solo 18.60\% de los píxeles queda en riesgo alto frente a 53.6\% que supera el umbral observado: el mapa representa claramente una subestimación del episodio. La comparación no es validación contra verdad de campo, porque la clase observada proviene del mismo proxy remoto; sí es una comprobación fuera de muestra de concordancia espacial. El resultado es consistente con la fila temporal: sobre esas dos escenas Gradient Boosting alcanza recall 0.5611 y F1 0.6651, muy por debajo de su desempeño aleatorio. Operativamente, las zonas rojas sirven para priorizar inspecciones, pero las zonas azules no permiten descartar floración bajo un régimen nuevo.
 
 Los errores cartografiados proceden de predicciones fuera de muestra de los cinco pliegues espaciales de Gradient Boosting. En la muestra de 220,000 filas hubo 3,640 falsos positivos y 889 falsos negativos; Amatitlán concentró 862 FN y 3,572 FP, mientras Atitlán tuvo 27 FN y 68 FP. Los errores se agrupan en transiciones y zonas heterogéneas, donde mezcla de píxel, borde de agua, turbidez o cambio temporal pueden alterar la señal.
 

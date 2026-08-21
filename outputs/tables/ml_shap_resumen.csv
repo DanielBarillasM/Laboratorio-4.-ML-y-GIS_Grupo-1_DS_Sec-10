@@ -1,12 +1,12 @@
-variable,shap_abs_medio,correlacion_valor_shap,direccion_general,metodo,modelo,n_explicado
-B05,6.91557872633075,0.9492908303186667,aumenta,TreeExplainer,Gradient Boosting,4000
-B08,0.9949788186412555,0.9326949564775159,aumenta,TreeExplainer,Gradient Boosting,4000
-y_normalizada,0.3395979465424541,-0.519477498876072,reduce,TreeExplainer,Gradient Boosting,4000
-x_normalizada,0.2567866065652742,0.7429398258801126,aumenta,TreeExplainer,Gradient Boosting,4000
-dia_anio_cos,0.2539663898134694,-0.5373688060737346,reduce,TreeExplainer,Gradient Boosting,4000
-B12,0.23922995206035005,0.7211940731975136,aumenta,TreeExplainer,Gradient Boosting,4000
-B11,0.17627551165687408,0.5790003855534246,aumenta,TreeExplainer,Gradient Boosting,4000
-dia_anio_sin,0.15471522758106318,0.3452724518858486,aumenta,TreeExplainer,Gradient Boosting,4000
-B06,0.099588315067726,0.258927280503709,aumenta,TreeExplainer,Gradient Boosting,4000
-B07,0.0864892473987545,-0.6669693075387613,reduce,TreeExplainer,Gradient Boosting,4000
-B8A,0.06864913467083647,-0.7238428209044381,reduce,TreeExplainer,Gradient Boosting,4000
+variable,shap_abs_medio,senal_relativa,correlacion_rango_valor_shap,direccion_general,metodo,modelo,n_explicado,n_alta,n_baja
+B05,6.915578726330759,1.0,0.8823224813760323,aumenta,TreeExplainer,Gradient Boosting,4000,2000,2000
+B08,0.9949788186412575,0.14387498978977997,0.890288022780368,aumenta,TreeExplainer,Gradient Boosting,4000,2000,2000
+y_normalizada,0.33959794654245445,0.04910622233963592,-0.5212237475713155,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+x_normalizada,0.25678660656527363,0.03713161497064158,0.7894143244134773,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+dia_anio_cos,0.2539663898134699,0.036723808644749306,-0.39515220510612314,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+B12,0.2392299520603504,0.03459290415558324,0.8365129989977984,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+B11,0.17627551165687436,0.025489625472082788,0.7807891848889744,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+dia_anio_sin,0.1547152275810631,0.022371985585529053,0.5352282545228719,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+B06,0.09958831506772621,0.014400575715890287,0.3266912208704482,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+B07,0.08648924739875444,0.012506436673108856,-0.5187789441827237,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000
+B8A,0.06864913467083661,0.009926737499127597,-0.7749775963033043,no_concluyente,TreeExplainer,Gradient Boosting,4000,2000,2000

@@ -4,7 +4,7 @@
 
 ### Clasificación geoespacial de cianobacterias en Atitlán y Amatitlán
 
-[![Estado](https://img.shields.io/badge/estado-completo%20100%25-0F9D91?style=for-the-badge)](#cumplimiento)
+[![Estado](https://img.shields.io/badge/estado-completo%20100%25-0F9D91?style=for-the-badge)](#resultados-principales)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Sentinel-2](https://img.shields.io/badge/Sentinel--2-L2A-2563EB?style=for-the-badge)](https://dataspace.copernicus.eu/)
 [![openEO](https://img.shields.io/badge/openEO-CDSE-F59E0B?style=for-the-badge)](https://openeo.dataspace.copernicus.eu/)
@@ -44,6 +44,8 @@ SHAP identifica a **B05** y **B08** como las señales de mayor influencia; las d
 
 Los mapas de la última escena de cada lago se generan con un modelo **reentrenado sin esa fecha**, porque esa fecha es también la retenida en la validación temporal: usar el modelo ajustado con las 220,000 filas dejaría dentro del entrenamiento el 29.0% de los píxeles de Amatitlán 2026-06-19. Las categorías (`p<0.33`, `0.33–0.67`, `p≥0.67`) expresan confianza del modelo y no reemplazan niveles sanitarios ni muestreos de campo.
 
+Con este esquema estrictamente fuera de muestra, Atitlán queda 99.56% en categoría baja y 0.26% alta. Amatitlán queda 70.00% baja, 11.40% media y 18.60% alta; el modelo subestima el episodio observado de 53.6% de píxeles sobre el umbral, en concordancia con su recall temporal de 0.5611. La tabla reproducible está en [ml_mapas_predictivos_resumen.csv](outputs/tables/ml_mapas_predictivos_resumen.csv).
+
 ### Desempeño esperado sobre los 3,419,056 píxeles válidos
 
 Las métricas de la tabla anterior se calculan sobre la muestra de modelado, que da a Amatitlán la mitad de las filas pese a aportar el 11% de los píxeles válidos. Reponderando las tasas fuera de muestra por el conteo real de clases de cada escena ([ml_metricas_poblacionales.csv](outputs/tables/ml_metricas_poblacionales.csv)):
@@ -55,23 +57,6 @@ Las métricas de la tabla anterior se calculan sobre la muestra de modelado, que
 | Atitlán | 0.36% | **0.8300** | 0.9294 | 0.8769 |
 
 El agregado casi no cambia, pero separa lo que el promedio ocultaba: en Atitlán se esperan ~2,064 falsos positivos contra 10,077 verdaderos, es decir cerca de una de cada seis alertas sería falsa. El umbral operativo debe calibrarse por lago.
-
-## Cumplimiento
-
-| Requisito de la Parte 2 | Estado |
-|---|:---:|
-| Dataset píxel–fecha, limpieza, tipos, faltantes y EDA | ✅ |
-| Respuesta binaria, justificación, distribución y desbalance | ✅ |
-| Ingeniería de variables y control estricto de fuga | ✅ |
-| Tres algoritmos, ajuste y prueba común 70/30 | ✅ |
-| Accuracy, precision, recall, F1, ROC-AUC y matrices | ✅ |
-| Cuadrícula EPSG:32615 y GroupKFold espacial | ✅ |
-| Validación temporal sobre las últimas fechas | ✅ |
-| Transferencia Atitlán ↔ Amatitlán | ✅ |
-| Importancia global y SHAP global/local | ✅ |
-| Mapas predictivos y mapas FP/FN | ✅ |
-| Conclusiones, utilidad, limitaciones y datos futuros | ✅ |
-| Notebook ejecutado, informe PDF y documentación | ✅ |
 
 ## Control de fuga de información
 
