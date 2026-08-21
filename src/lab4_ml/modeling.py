@@ -25,6 +25,11 @@ from sklearn.preprocessing import StandardScaler
 from .data import SAFE_PREDICTORS
 
 
+# Margen de ROC-AUC por debajo del cual dos modelos se consideran empatados en
+# la particion aleatoria; evita elegir por diferencias irrelevantes.
+AUC_SELECTION_TOLERANCE = 1e-3
+
+
 @dataclass
 class ExperimentResult:
     metrics: pd.DataFrame
@@ -97,6 +102,84 @@ def model_spaces(random_state: int = 2026) -> dict[str, tuple[Pipeline, dict]]:
     }
 
 
+def select_best_model(random_metrics: pd.DataFrame, *, tolerance: float = AUC_SELECTION_TOLERANCE) -> str:
+    """Elige el modelo de la particion aleatoria tratando empates como empates.
+
+    Ordenar por ROC-AUC crudo haria que una diferencia de 1e-5 en una sola
+    particion decidiera el modelo explicativo y cartografico. Se agrupan los
+    modelos dentro de ``tolerance`` y se desempata por recall, prioritario en
+    vigilancia ambiental porque un falso negativo omite una zona a inspeccionar.
+    """
+
+    if random_metrics.empty:
+        raise ValueError("No hay metricas de la particion aleatoria")
+    top_auc = random_metrics["roc_auc"].max()
+    contenders = random_metrics.loc[random_metrics["roc_auc"] >= top_auc - tolerance]
+    return str(contenders.sort_values("recall", ascending=False).iloc[0]["modelo"])
+
+
+def population_weighted_metrics(errors: pd.DataFrame, classes: pd.DataFrame) -> pd.DataFrame:
+    """Extrapola tasas fuera de muestra al total de pixeles validos.
+
+    La muestra de modelado toma 10,000 pixeles por lago--fecha, de modo que da
+    a un lago pequeno la mitad de las filas y eleva la prevalencia global. Dentro
+    de cada escena el muestreo si es uniforme, asi que TPR y FPR estimados por
+    escena son insesgados; reponderarlos por el conteo real de clases devuelve
+    el desempeno esperado sobre la poblacion completa.
+
+    ``errors`` necesita columnas lago, fecha, TP, FN, FP y TN por escena;
+    ``classes`` aporta los conteos reales ``baja`` y ``alta`` de cada escena.
+    """
+
+    counts = errors.copy()
+    for column in ("TP", "FN", "FP", "TN"):
+        if column not in counts:
+            counts[column] = 0
+    counts["fecha"] = pd.to_datetime(counts["fecha"]).dt.strftime("%Y-%m-%d")
+    reference = classes.copy()
+    reference["fecha"] = pd.to_datetime(reference["fecha"]).dt.strftime("%Y-%m-%d")
+    merged = counts.merge(reference[["lago", "fecha", "baja", "alta"]], on=["lago", "fecha"])
+    if merged.empty:
+        raise ValueError("Ninguna escena de errores coincide con la tabla de clases")
+
+    positives = merged["TP"] + merged["FN"]
+    negatives = merged["FP"] + merged["TN"]
+    tpr = np.where(positives > 0, merged["TP"] / positives.where(positives > 0), 0.0)
+    fpr = np.where(negatives > 0, merged["FP"] / negatives.where(negatives > 0), 0.0)
+    merged["tp_poblacional"] = tpr * merged["alta"]
+    merged["fn_poblacional"] = merged["alta"] - merged["tp_poblacional"]
+    merged["fp_poblacional"] = fpr * merged["baja"]
+    merged["tn_poblacional"] = merged["baja"] - merged["fp_poblacional"]
+
+    def _summarize(frame: pd.DataFrame, scope: str, lake: str) -> dict:
+        tp = float(frame["tp_poblacional"].sum())
+        fn = float(frame["fn_poblacional"].sum())
+        fp = float(frame["fp_poblacional"].sum())
+        tn = float(frame["tn_poblacional"].sum())
+        total = tp + fn + fp + tn
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        return {
+            "alcance": scope,
+            "lago": lake,
+            "pixeles_validos": int(round(total)),
+            "prevalencia_real": (tp + fn) / total if total else 0.0,
+            "accuracy": (tp + tn) / total if total else 0.0,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "tp": int(round(tp)),
+            "fp": int(round(fp)),
+            "fn": int(round(fn)),
+            "tn": int(round(tn)),
+        }
+
+    rows = [_summarize(merged, "global", "ambos")]
+    rows.extend(_summarize(group, "lago", lake) for lake, group in merged.groupby("lago"))
+    return pd.DataFrame(rows)
+
+
 def _metric_row(y_true, probability, *, model: str, validation: str, fold: str) -> dict:
     predicted = (np.asarray(probability) >= 0.5).astype(int)
     y_true = np.asarray(y_true)
@@ -137,7 +220,16 @@ def run_experiments(
     random_state: int = 2026,
     tuning_cap: int = 50_000,
 ) -> ExperimentResult:
-    """Ajusta y compara validacion aleatoria, espacial, temporal y entre lagos."""
+    """Ajusta y compara validacion aleatoria, espacial, temporal y entre lagos.
+
+    Los hiperparametros se buscan una sola vez sobre una submuestra de la
+    particion aleatoria de entrenamiento y se reutilizan en los cuatro
+    esquemas. Como esa submuestra abarca todos los bloques de 1 km, ambos lagos
+    y las dos fechas retenidas, las validaciones espacial, temporal y entre
+    lagos arrastran fuga de seleccion de hiperparametros: sus metricas son
+    ligeramente optimistas. El sesgo es pequeno porque la rejilla tiene dos o
+    tres puntos por modelo, pero un ajuste anidado por esquema lo eliminaria.
+    """
 
     train_idx, test_idx = train_test_split(
         np.arange(len(data)),
@@ -255,7 +347,12 @@ def run_experiments(
 
     metrics_df = pd.DataFrame(metrics)
     random_metrics = metrics_df.loc[metrics_df["validacion"] == "aleatoria_70_30"]
-    best_name = random_metrics.sort_values(["roc_auc", "recall"], ascending=False).iloc[0]["modelo"]
+    # Gradient Boosting y Random Forest quedan separados por 4e-5 de ROC-AUC en
+    # una sola particion: ordenar por ese margen seria decidir con ruido. Se
+    # consideran empatados todos los modelos dentro de la tolerancia y se
+    # desempata por recall, que es la metrica prioritaria en vigilancia
+    # ambiental porque un falso negativo omite una zona que requiere inspeccion.
+    best_name = select_best_model(random_metrics)
     best_model = tuned[best_name]
     importance_sample = random_test.sample(
         n=min(20_000, len(random_test)), random_state=random_state

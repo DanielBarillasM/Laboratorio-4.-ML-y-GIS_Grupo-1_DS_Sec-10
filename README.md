@@ -38,7 +38,23 @@ Se comparan regresión logística, Random Forest y Gradient Boosting bajo cuatro
 
 Gradient Boosting alcanzó ROC-AUC 0.9987 y F1 0.9572 en prueba aleatoria, pero su F1 temporal bajó a 0.6651. La regresión logística mantuvo recall temporal 0.9384. Esta diferencia es uno de los resultados centrales: una división aleatoria no sustituye la validación geográfica y temporal.
 
-SHAP identifica a **B05** y **B08** como las señales de mayor influencia. En la escena más reciente, el mapa de Atitlán clasificó 99.77% de los píxeles válidos con riesgo bajo; Amatitlán presentó 59.58% en categoría alta. Estas categorías expresan probabilidad del modelo y no reemplazan niveles sanitarios ni muestreos de campo.
+Gradient Boosting y Random Forest quedan a 4×10⁻⁵ de ROC-AUC en una única partición, así que no se tratan como distinguibles: el código los considera empatados dentro de una tolerancia de 10⁻³ y desempata por recall. La caída temporal se apoya en dos escenas y está parcialmente confundida — la de Amatitlán es la más nubosa del conjunto (13%) y la única con floración intermedia (53.6%), un régimen ausente del entrenamiento — de modo que mide novedad de régimen además del paso del tiempo.
+
+SHAP identifica a **B05** y **B08** como las señales de mayor influencia; las direcciones de las bandas restantes no se interpretan porque su magnitud queda por debajo del 5% de la dominante y su signo es un artefacto de colinealidad entre bandas contiguas.
+
+Los mapas de la última escena de cada lago se generan con un modelo **reentrenado sin esa fecha**, porque esa fecha es también la retenida en la validación temporal: usar el modelo ajustado con las 220,000 filas dejaría dentro del entrenamiento el 29.0% de los píxeles de Amatitlán 2026-06-19. Las categorías (`p<0.33`, `0.33–0.67`, `p≥0.67`) expresan confianza del modelo y no reemplazan niveles sanitarios ni muestreos de campo.
+
+### Desempeño esperado sobre los 3,419,056 píxeles válidos
+
+Las métricas de la tabla anterior se calculan sobre la muestra de modelado, que da a Amatitlán la mitad de las filas pese a aportar el 11% de los píxeles válidos. Reponderando las tasas fuera de muestra por el conteo real de clases de cada escena ([ml_metricas_poblacionales.csv](outputs/tables/ml_metricas_poblacionales.csv)):
+
+| Alcance | Prevalencia real | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|
+| Global | 5.04% | 0.9203 | 0.9783 | 0.9484 |
+| Amatitlán | 42.79% | 0.9267 | 0.9816 | 0.9533 |
+| Atitlán | 0.36% | **0.8300** | 0.9294 | 0.8769 |
+
+El agregado casi no cambia, pero separa lo que el promedio ocultaba: en Atitlán se esperan ~2,064 falsos positivos contra 10,077 verdaderos, es decir cerca de una de cada seis alertas sería falsa. El umbral operativo debe calibrarse por lago.
 
 ## Cumplimiento
 

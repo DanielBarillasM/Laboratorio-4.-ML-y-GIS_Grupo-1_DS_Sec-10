@@ -186,7 +186,7 @@ Gradient Boosting & 0.9810 & 0.9296 & 0.9865 & 0.9572 & \textbf{0.9987}\\
 \end{tabular}
 \end{table}
 
-Random Forest alcanzó el F1 aleatorio más alto por un margen pequeño. Gradient Boosting obtuvo el ROC-AUC máximo y recall alto; se seleccionó como modelo explicativo y cartográfico por ese equilibrio. La regresión logística sacrificó precisión, pero omitió menos positivos.
+Random Forest alcanzó el F1 aleatorio más alto y Gradient Boosting el ROC-AUC más alto, pero ninguna de las dos diferencias es concluyente: los ROC-AUC distan $4\times10^{-5}$ en una única partición, sin intervalo de confianza. El código trata como empatados a los modelos que caen dentro de una tolerancia de $10^{-3}$ y desempata por recall, criterio prioritario en vigilancia ambiental; con esa regla se selecciona Gradient Boosting como modelo explicativo y cartográfico. La regresión logística sacrificó precisión, pero omitió menos positivos.
 
 \begin{figure}[H]
 \centering
@@ -237,6 +237,8 @@ Temporal & Gradient Boosting & 0.8495 & 0.8164 & 0.5611 & 0.6651 & 0.9080\\
 
 El desempeño espacial cercano al aleatorio indica señal espectral transferible entre los bloques observados. En contraste, la caída temporal es sustancial: Random Forest se vuelve muy conservador y su recall baja a 0.1620; Gradient Boosting pierde 0.2921 puntos de F1 frente a la prueba aleatoria. La regresión logística generaliza mejor en recall temporal. Por tanto, no existe un único ``mejor'' algoritmo sin especificar el costo del error: Gradient Boosting equilibra discriminación y explicación, mientras que la regresión logística es más segura para priorizar no omitir alertas futuras.
 
+Esta prueba se apoya en dos escenas, y conviene no atribuir la caída al paso del tiempo sin matizarla. La retención de Atitlán (0.16\% de positivos) es indistinguible de sus otras diez fechas, así que casi toda la degradación proviene de la escena de Amatitlán, que reúne dos particularidades: es la más nubosa de todo el conjunto (13\% frente a 5\% o menos en las 21 restantes) y es la única con floración intermedia, 53.6\% de píxeles altos, cuando toda fecha de entrenamiento del lago está por debajo de 0.4\% o por encima de 70\%. La retención mide entonces un régimen de floración no observado antes, combinado con menor calidad de escena, más que el efecto del tiempo transcurrido. La conclusión operativa se mantiene --- la partición aleatoria es optimista y hay cambio de distribución ---, pero su magnitud exacta requiere más fechas retenidas, idealmente una validación dejando fuera cada fecha por turno.
+
 \section{Generalización entre lagos}
 
 Cada modelo se entrenó con las 110,000 observaciones muestreadas de un lago y se evaluó sobre las 110,000 del otro, sin reajuste.
@@ -260,6 +262,8 @@ Amatitlán $\rightarrow$ Atitlán & Logística & 0.580 & 0.951 & 0.721 & 0.998\\
 \end{tabular}
 \end{table}
 
+Conviene contrastar cada dirección con su clasificador trivial. En Amatitlán $\rightarrow$ Atitlán la prevalencia de destino es 0.33\%, de modo que predecir siempre ``baja'' alcanza accuracy 0.9967: los tres modelos quedan en ese nivel o por debajo (Gradient Boosting, 0.9958). El accuracy no aporta información en esa dirección y solo precision, recall y ROC-AUC resultan informativos; por la misma razón, promediar las dos direcciones en una sola fila --- como hace la tabla de resumen reproducible --- mezcla escenarios con prevalencias de 42.7\% y 0.33\% y no debe leerse como un desempeño típico.
+
 La generalización es asimétrica y peor que la evaluación dentro de la mezcla de ambos lagos. Atitlán aporta solo 0.36\% de positivos, por lo cual entrenar allí ofrece pocos episodios altos y reduce el recall de los modelos de árboles cuando se aplican a Amatitlán. En sentido inverso, los modelos detectan la mayoría de los positivos escasos de Atitlán, pero con precisión moderada. Profundidad, mezcla, altitud, materia suspendida, uso del suelo y presión urbana modifican la firma óptica; un clasificador aprendido en un lago no debe transferirse sin calibración local.
 
 \section{Interpretación del modelo}
@@ -276,7 +280,9 @@ La importancia por permutación del Gradient Boosting se midió sobre prueba ind
 
 \subsection{SHAP global, dirección y casos locales}
 
-TreeExplainer se aplicó a 4,000 observaciones de prueba del Gradient Boosting. El valor absoluto SHAP promedio confirmó el dominio de B05 (6.916), seguido por B08 (0.995), posición norte (0.340), posición este (0.257) y estacionalidad coseno (0.254). Valores altos de B05, B08, B11 y B12 tienden a aumentar la predicción; B07 y B8A tienden a reducirla. La componente espacial indica heterogeneidad persistente, no causalidad geográfica.
+TreeExplainer se aplicó a 4,000 observaciones de prueba del Gradient Boosting, muestreadas de forma deliberadamente balanceada (2,000 de cada clase). Esa mezcla 50/50 no es la del conjunto de prueba (21.5\% alta) ni la poblacional (5.04\%), por lo que el valor base y las magnitudes deben leerse como efectos relativos y no como probabilidades esperadas en campo. El valor absoluto SHAP promedio confirmó el dominio de B05 (6.916), seguido a gran distancia por B08 (0.995), posición norte (0.340), posición este (0.257) y estacionalidad coseno (0.254). Valores altos de B05 y B08 aumentan la predicción, y la componente espacial indica heterogeneidad persistente, no causalidad geográfica.
+
+Las direcciones de las bandas restantes no se interpretan. B07 (783\,nm), B08 (842\,nm) y B8A (865\,nm) son contiguas y casi colineales dentro del píxel, y sin embargo reciben signos alternos: positivo la del medio, negativos sus dos vecinas. Con magnitudes de 0.086 y 0.069 frente a los 6.916 de B05 --- alrededor del 1\% --- esos signos son un artefacto del reparto de cortes entre variables redundantes, no una respuesta óptica. El resumen tabulado marca como \code{no\_concluyente} toda variable cuya señal quede por debajo del 5\% de la dominante.
 
 \begin{figure}[H]
 \centering
@@ -307,11 +313,13 @@ Las explicaciones locales de una predicción alta y una baja muestran cómo el m
 
 \section{Mapas predictivos y errores espaciales}
 
-El Gradient Boosting final se reajustó sobre la muestra completa únicamente para generar superficies; todas las métricas anteriores permanecen fuera de muestra. Para la última escena de cada lago se predijo cada píxel válido y se clasificó la probabilidad en baja ($p<0.30$), media ($0.30\leq p<0.70$) y alta ($p\geq0.70$). Las categorías representan confianza del modelo, no nuevos umbrales sanitarios.
+La última escena de cada lago coincide con la fecha retenida en la validación temporal. Reajustar el modelo sobre las 220,000 filas dejaría dentro del entrenamiento el 29.0\% de los píxeles válidos de Amatitlán 2026-06-19 y el 3.3\% de los de Atitlán 2026-07-22, de modo que el mapa dejaría de ser comparable con las métricas fuera de muestra. Por eso cada escena se predice con un Gradient Boosting reentrenado sin su propia fecha, conservando los hiperparámetros seleccionados; el modelo ajustado con todas las filas se conserva únicamente como objeto de despliegue. Cada píxel válido se clasificó en baja ($p<0.33$), media ($0.33\leq p<0.67$) y alta ($p\geq0.67$), con los mismos cortes que emplea la barra de color de las figuras. Las categorías representan confianza del modelo, no nuevos umbrales sanitarios.
 
 \begin{table}[H]
 \centering
-\caption{Resumen de mapas predictivos de la última fecha.}
+% ATENCION: cifras pendientes de regenerar con scripts/run_ml_final.py tras el
+% cambio a mapas fuera de muestra (antes se usaba el reajuste con las 220,000 filas).
+\caption{Resumen de mapas predictivos de la última fecha, cada una predicha sin su propia fecha en el entrenamiento.}
 \small
 \begin{tabular}{lrrrrr}
 \toprule
@@ -335,7 +343,7 @@ Amatitlán, 2026-06-19 & 34,483 & 0.623 & 31.73 & 8.70 & 59.58\\
 \caption{Amatitlán: CYA observado, probabilidad y categoría predictiva.}
 \end{figure}
 
-Los mapas son coherentes con la Parte 1: la escena final de Atitlán presenta concentración baja casi generalizada, mientras que Amatitlán mantiene un patrón amplio de riesgo alto. La comparación no es una validación independiente, porque la clase observada proviene del mismo proxy remoto; su utilidad es verificar concordancia espacial y priorizar puntos de muestreo.
+Los mapas son coherentes con la Parte 1: la escena final de Atitlán presenta concentración baja casi generalizada, mientras que Amatitlán mantiene un patrón amplio de riesgo alto. La comparación no es una validación independiente, porque la clase observada proviene del mismo proxy remoto y se calcula sobre el mismo píxel que alimenta al modelo; su utilidad es verificar concordancia espacial y priorizar puntos de muestreo. El mapa de Amatitlán debe leerse junto con la fila temporal del cuadro de escenarios: sobre esa misma escena el Gradient Boosting alcanza recall 0.5611 y F1 0.6651, muy por debajo de su desempeño aleatorio, de modo que la concordancia visual global convive con una omisión apreciable de píxeles altos.
 
 Los errores cartografiados proceden de predicciones fuera de muestra de los cinco pliegues espaciales de Gradient Boosting. En la muestra de 220,000 filas hubo 3,640 falsos positivos y 889 falsos negativos; Amatitlán concentró 862 FN y 3,572 FP, mientras Atitlán tuvo 27 FN y 68 FP. Los errores se agrupan en transiciones y zonas heterogéneas, donde mezcla de píxel, borde de agua, turbidez o cambio temporal pueden alterar la señal.
 
@@ -345,10 +353,32 @@ Los errores cartografiados proceden de predicciones fuera de muestra de los cinc
 \caption{Verdaderos y falsos resultados fuera de muestra bajo GroupKFold espacial.}
 \end{figure}
 
+\subsection{Desempeño esperado sobre la población completa}
+
+Las métricas anteriores se calculan sobre la muestra de modelado, que asigna a Amatitlán la mitad de las filas aunque aporte el 11\% de los píxeles válidos, y eleva la prevalencia a 21.5\% frente al 5.04\% real. Dentro de cada escena el muestreo sí es uniforme, de modo que las tasas por escena son insesgadas: reponderar TPR y FPR de cada lago--fecha por su conteo real de clases devuelve el desempeño esperado sobre los 3,419,056 píxeles válidos.
+
+\begin{table}[H]
+\centering
+\caption{Gradient Boosting fuera de muestra, reponderado a la población completa.}
+\label{tab:poblacional}
+\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Alcance & Píxeles & Prev. real & Precision & Recall & F1 & FP & FN\\
+\midrule
+Global & 3,419,056 & 5.04\% & 0.9203 & 0.9783 & 0.9484 & 14,606 & 3,741\\
+Amatitlán & 377,304 & 42.79\% & 0.9267 & 0.9816 & 0.9533 & 12,542 & 2,976\\
+Atitlán & 3,041,752 & 0.36\% & 0.8300 & 0.9294 & 0.8769 & 2,064 & 765\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+El resultado agregado apenas se mueve: la precision global pasa de 0.9274 en la muestra a 0.9203 en la población, porque el modelo mantiene una tasa de falsos positivos muy baja donde la clase negativa domina. Lo que el promedio ocultaba es la diferencia entre lagos. En Amatitlán la precision poblacional es 0.9267, pero en Atitlán cae a 0.8300: sobre un lago donde solo el 0.36\% de los píxeles es realmente alto, se esperan unos 2,064 falsos positivos frente a 10,077 verdaderos, es decir aproximadamente una de cada seis alertas sería falsa. Para vigilancia esto no invalida el modelo --- el recall se mantiene en 0.9294 y el costo de un falso positivo es una inspección adicional ---, pero sí implica que el umbral operativo debe calibrarse por lago y no globalmente.
+
 \section{Conclusiones, utilidad y limitaciones}
 
 \begin{enumerate}
-\item Es posible clasificar el proxy CYA con señal espectral que no interviene directamente en su fórmula. El control de fuga evita una solución circular y hace que las métricas reflejen generalización entre bandas independientes.
+\item Es posible reconstruir el proxy CYA con bandas que no intervienen en su fórmula, pero conviene ser preciso sobre qué mide ese resultado. La etiqueta es una función algebraica determinista de B02, B03 y B04 del mismo píxel, y las bandas admitidas no son independientes de ellas: B05 (705\,nm) es contigua a B04 (665\,nm) y casi colineal dentro del píxel. Excluir las variables elimina la circularidad formal, no la información, y por eso B05 concentra por sí sola 0.266 de la caída de ROC-AUC y el discriminante alcanza 0.9987. El ejercicio demuestra interpolación espectral robusta; no constituye evidencia de detección de cianobacterias validada contra verdad de campo, que no existe en este conjunto.
 \item La prueba aleatoria es optimista para uso operativo. La validación temporal reveló degradación fuerte, en especial del recall de Random Forest. Cualquier despliegue requiere monitorear cambio de distribución y reentrenar con campañas nuevas.
 \item La validación espacial fue estable dentro de la cobertura estudiada, pero la transferencia entre lagos fue asimétrica. Se recomienda calibración por lago y conservar evaluación separada por cuerpo de agua.
 \item B05 y B08 dominan la explicación del Gradient Boosting. Esto es compatible con sensibilidad del borde rojo y NIR a propiedades ópticas del agua, pero SHAP no establece causalidad ni distingue por sí solo cianobacterias de sedimentos u otros pigmentos.
@@ -356,6 +386,8 @@ Los errores cartografiados proceden de predicciones fuera de muestra de los cinc
 \end{enumerate}
 
 Las principales limitaciones son: respuesta derivada de un proxy y no de verdad de campo; solo once fechas por lago; autocorrelación residual entre bloques vecinos; nubes y geometría de adquisición; resolución de 20 m; mezcla en orillas; fuerte diferencia de prevalencia; y evaluación limitada a dos lagos guatemaltecos. Los umbrales de probabilidad no están calibrados como niveles sanitarios.
+
+Quedan además tres limitaciones metodológicas del propio diseño experimental. Primera, los hiperparámetros se buscaron una sola vez sobre una submuestra de la partición aleatoria de entrenamiento y se reutilizaron en los cuatro esquemas; como esa submuestra abarca todos los bloques, ambos lagos y las dos fechas retenidas, las validaciones espacial, temporal y entre lagos arrastran fuga de selección de hiperparámetros y son ligeramente optimistas. El sesgo es pequeño, porque la rejilla tiene dos o tres puntos por modelo, pero un ajuste anidado dentro de cada esquema lo eliminaría. Segunda, ambas rejillas seleccionaron valores en el borde del espacio explorado --- profundidad libre y hoja mínima 2 en Random Forest, tasa 0.10 y 31 hojas en Gradient Boosting ---, señal de que el óptimo probablemente queda fuera y de que conviene ampliarlas. Tercera, las coordenadas normalizadas figuran entre los predictores, lo que permite al modelo interpolar hacia bloques vecinos retenidos y debilita en parte el aislamiento que busca GroupKFold; su efecto es menor, 0.005 de caída de ROC-AUC por permutación, pero una evaluación estricta debería repetirse sin ellas.
 
 Para fortalecer el modelo se necesitan conteos celulares y taxonómicos georreferenciados, clorofila-a, ficocianina y toxinas; temperatura, pH, oxígeno disuelto, turbidez, transparencia y nutrientes; profundidad y batimetría; viento y precipitación acumulada; descargas, uso del suelo y tratamiento de aguas; más fechas y años, incluyendo estación lluviosa y seca; y sensores complementarios o productos atmosféricos. Una siguiente evaluación debería usar campañas prospectivas, bloques espaciales contiguos y calibración explícita de probabilidades.
 

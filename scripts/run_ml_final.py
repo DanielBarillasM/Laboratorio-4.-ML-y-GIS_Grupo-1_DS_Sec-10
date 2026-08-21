@@ -21,6 +21,7 @@ import rasterio
 from rasterio.warp import transform_geom
 import seaborn as sns
 import shap
+from scipy.stats import spearmanr
 from sklearn.base import clone
 
 
@@ -34,12 +35,29 @@ from lab4_ml.data import (  # noqa: E402
     load_raster_observation,
     values_to_surface,
 )
-from lab4_ml.modeling import ExperimentResult, run_experiments  # noqa: E402
+from lab4_ml.modeling import (  # noqa: E402
+    ExperimentResult,
+    population_weighted_metrics,
+    run_experiments,
+)
+from sklearn.pipeline import Pipeline  # noqa: E402
 
 
 COLORS = {"atitlan": "#0f9d91", "amatitlan": "#f59e42"}
 LAKE_NAMES = {"atitlan": "Atitlán", "amatitlan": "Amatitlán"}
 ERROR_COLORS = {"TN": "#cbd5e1", "TP": "#0f9d91", "FP": "#f59e0b", "FN": "#dc2626"}
+
+# Unica fuente de verdad de las categorias operativas: el informe, la barra de
+# color y el CSV se derivan de aqui para que no puedan volver a desincronizarse.
+CATEGORY_EDGES = (1 / 3, 2 / 3)
+CATEGORY_LABELS = (
+    f"Baja < {CATEGORY_EDGES[0]:.2f}",
+    f"Media {CATEGORY_EDGES[0]:.2f}-{CATEGORY_EDGES[1]:.2f}",
+    f"Alta >= {CATEGORY_EDGES[1]:.2f}",
+)
+# Por debajo de esta fraccion del |SHAP| maximo, el signo de la correlacion es
+# ruido de colinealidad entre bandas vecinas y no se reporta como direccion.
+SHAP_SIGNAL_FLOOR = 0.05
 
 
 def parse_args() -> argparse.Namespace:
@@ -328,12 +346,12 @@ def save_shap_products(
         .sort_index()
     )
     x_sample = sampled[SAFE_PREDICTORS]
-    background = result.random_test[SAFE_PREDICTORS].sample(n=300, random_state=random_state)
     try:
         explainer = shap.TreeExplainer(estimator)
         explanation = explainer(x_sample)
         method = "TreeExplainer"
     except Exception:
+        background = result.random_test[SAFE_PREDICTORS].sample(n=300, random_state=random_state)
         explainer = shap.Explainer(best_pipeline.predict_proba, background, feature_names=SAFE_PREDICTORS)
         explanation = explainer(x_sample, max_evals=2 * len(SAFE_PREDICTORS) + 1)
         method = "PermutationExplainer"
@@ -365,20 +383,42 @@ def save_shap_products(
         plt.savefig(figures / f"ml_shap_local_{label}.png", dpi=190, bbox_inches="tight")
         plt.close()
 
+    # La muestra explicada esta balanceada a proposito (misma cantidad de alta y
+    # baja), de modo que el valor base y las magnitudes corresponden a un prior
+    # 50/50 y no a la prevalencia del test ni a la poblacional. Se registra para
+    # que la tabla no se lea como si fuera la distribucion real.
+    sampled_labels = test.loc[sampled.index, "cya_alta"]
+    magnitudes = np.abs(values).mean(axis=0)
+    largest = float(magnitudes.max())
     summary_rows = []
     for index, variable in enumerate(SAFE_PREDICTORS):
         feature = x_sample[variable].to_numpy()
         shap_values = values[:, index]
-        correlation = np.corrcoef(feature, shap_values)[0, 1]
+        correlation = float(spearmanr(feature, shap_values).statistic)
+        share = float(magnitudes[index]) / largest if largest > 0 else 0.0
+        if share < SHAP_SIGNAL_FLOOR:
+            # Bandas vecinas (B07, B08, B8A) son casi colineales: cuando el
+            # efecto es marginal frente al dominante, el signo es un artefacto
+            # del reparto de cortes y no una direccion interpretable.
+            direction = "no_concluyente"
+        elif correlation > 0.1:
+            direction = "aumenta"
+        elif correlation < -0.1:
+            direction = "reduce"
+        else:
+            direction = "no_monotona"
         summary_rows.append(
             {
                 "variable": variable,
-                "shap_abs_medio": float(np.mean(np.abs(shap_values))),
-                "correlacion_valor_shap": float(correlation),
-                "direccion_general": "aumenta" if correlation > 0.1 else "reduce" if correlation < -0.1 else "no_monotona",
+                "shap_abs_medio": float(magnitudes[index]),
+                "senal_relativa": share,
+                "correlacion_rango_valor_shap": correlation,
+                "direccion_general": direction,
                 "metodo": method,
                 "modelo": result.best_model,
                 "n_explicado": len(x_sample),
+                "n_alta": int(sampled_labels.sum()),
+                "n_baja": int((1 - sampled_labels).sum()),
             }
         )
     pd.DataFrame(summary_rows).sort_values("shap_abs_medio", ascending=False).to_csv(
@@ -403,7 +443,24 @@ def _write_probability_raster(path: Path, observation, probability_surface: np.n
         dst.set_band_description(1, "probabilidad_cya_alta")
 
 
-def save_predictive_maps(model, raw_dir: Path, processed: Path, figures: Path, tables: Path) -> None:
+def save_predictive_maps(
+    template: Pipeline,
+    data: pd.DataFrame,
+    raw_dir: Path,
+    processed: Path,
+    figures: Path,
+    tables: Path,
+) -> None:
+    """Cartografia cada escena con un modelo que nunca la vio.
+
+    Se mapea la ultima fecha de cada lago, que es tambien la fecha retenida en
+    la validacion temporal. Reajustar sobre las 220,000 filas dejaria dentro de
+    entrenamiento hasta el 29 % de los pixeles validos de esa misma escena, de
+    modo que el mapa dejaria de ser comparable con las metricas fuera de
+    muestra. Por eso cada escena se predice con un modelo reentrenado sin su
+    fecha, conservando los hiperparametros seleccionados.
+    """
+
     rows = []
     output_dir = processed / "prediction_maps"
     category_cmap = ListedColormap(["#dbeafe", "#fbbf24", "#dc2626"])
@@ -411,9 +468,16 @@ def save_predictive_maps(model, raw_dir: Path, processed: Path, figures: Path, t
     for lake in ("atitlan", "amatitlan"):
         path = sorted((raw_dir / lake).glob("*.tif"))[-1]
         observation = load_raster_observation(path, lake)
+        train = data.loc[data["fecha"] != observation.date]
+        if len(train) == len(data):
+            raise ValueError(
+                f"{lake}: la fecha {observation.date.date()} no esta en el dataset; "
+                "no se puede garantizar un mapa fuera de muestra"
+            )
+        model = clone(template).fit(train[SAFE_PREDICTORS], train["cya_alta"])
         probability = _predict_in_chunks(model, observation.data)
         surface = values_to_surface(observation, probability)
-        category = np.digitize(probability, [1 / 3, 2 / 3]).astype("float32")
+        category = np.digitize(probability, CATEGORY_EDGES).astype("float32")
         category_surface = values_to_surface(observation, category)
         cya_surface = values_to_surface(observation, observation.data["CYA"].to_numpy())
         extent = (
@@ -433,12 +497,12 @@ def save_predictive_maps(model, raw_dir: Path, processed: Path, figures: Path, t
         fig.colorbar(image, ax=axes[1], label="Probabilidad de CYA alta")
         image = axes[2].imshow(category_surface, extent=extent, origin="upper", cmap=category_cmap, norm=category_norm)
         colorbar = fig.colorbar(image, ax=axes[2], ticks=[0, 1, 2])
-        colorbar.ax.set_yticklabels(["Baja < 0.33", "Media", "Alta ≥ 0.67"])
+        colorbar.ax.set_yticklabels(list(CATEGORY_LABELS))
         for ax, title in zip(axes, ("CYA observado (Parte 1)", "Probabilidad predicha", "Categoría operativa")):
             _draw_outline(ax, lake)
             ax.set(title=title, xlabel="Este UTM (m)", ylabel="Norte UTM (m)", aspect="equal")
         fig.suptitle(
-            f"{LAKE_NAMES[lake]} — observado vs. modelo — {observation.date.date()}",
+            f"{LAKE_NAMES[lake]} — observado vs. modelo (fuera de muestra) — {observation.date.date()}",
             fontsize=15,
             fontweight="bold",
         )
@@ -456,13 +520,28 @@ def save_predictive_maps(model, raw_dir: Path, processed: Path, figures: Path, t
                 "categoria_baja_pct": 100 * float(np.mean(category == 0)),
                 "categoria_media_pct": 100 * float(np.mean(category == 1)),
                 "categoria_alta_pct": 100 * float(np.mean(category == 2)),
-                "archivo_raster_local": str(raster_path.relative_to(ROOT)),
+                "esquema_modelo": "reentrenado_sin_esta_fecha",
+                "filas_entrenamiento": len(train),
+                "corte_baja_media": CATEGORY_EDGES[0],
+                "corte_media_alta": CATEGORY_EDGES[1],
+                "archivo_raster_local": raster_path.relative_to(ROOT).as_posix(),
             }
         )
     pd.DataFrame(rows).to_csv(tables / "ml_mapas_predictivos_resumen.csv", index=False)
 
 
-def save_spatial_error_map(result: ExperimentResult, figures: Path, tables: Path) -> None:
+def save_population_metrics(predictions: pd.DataFrame, classes: pd.DataFrame, tables: Path) -> None:
+    """Escribe el desempeno esperado sobre los 3,419,056 pixeles validos."""
+
+    counts = (
+        predictions.groupby(["lago", "fecha", "error"]).size().unstack(fill_value=0).reset_index()
+    )
+    population_weighted_metrics(counts, classes).to_csv(
+        tables / "ml_metricas_poblacionales.csv", index=False
+    )
+
+
+def save_spatial_error_map(result: ExperimentResult, figures: Path, tables: Path) -> pd.DataFrame:
     predictions = result.spatial_predictions.loc[
         result.spatial_predictions["modelo"] == result.best_model
     ].copy()
@@ -508,6 +587,7 @@ def save_spatial_error_map(result: ExperimentResult, figures: Path, tables: Path
     fig.tight_layout()
     fig.savefig(figures / "ml_errores_espaciales.png", dpi=190)
     plt.close(fig)
+    return predictions
 
 
 def main() -> int:
@@ -537,7 +617,8 @@ def main() -> int:
     (tables / "ml_mejor_modelo.txt").write_text(result.best_model + "\n", encoding="utf-8")
 
     save_shap_products(result, figures, tables)
-    save_spatial_error_map(result, figures, tables)
+    spatial_errors = save_spatial_error_map(result, figures, tables)
+    save_population_metrics(spatial_errors, classes, tables)
     final_model = clone(result.fitted_models[result.best_model]).fit(data[SAFE_PREDICTORS], data["cya_alta"])
     joblib.dump(final_model, models / "modelo_final.joblib")
     (models / "metadata.json").write_text(
@@ -547,14 +628,21 @@ def main() -> int:
                 "predictores": SAFE_PREDICTORS,
                 "n_entrenamiento_final": len(data),
                 "umbral_probabilidad": 0.5,
-                "uso": "Mapas finales; las metricas se calcularon fuera de muestra.",
+                "uso": (
+                    "Modelo de despliegue ajustado con las 220,000 filas. Los mapas del "
+                    "informe NO usan este objeto: cada escena se predice con un modelo "
+                    "reentrenado sin su propia fecha para que sea fuera de muestra."
+                ),
+                "cortes_categoria": list(CATEGORY_EDGES),
             },
             ensure_ascii=False,
             indent=2,
         ),
         encoding="utf-8",
     )
-    save_predictive_maps(final_model, args.raw_dir, processed, figures, tables)
+    save_predictive_maps(
+        result.fitted_models[result.best_model], data, args.raw_dir, processed, figures, tables
+    )
 
     print(aggregate.to_string(index=False))
     print(f"Modelo final: {result.best_model}")
